@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerenciador de Links M3U8</title>
+    <title>Gerenciador de Streams – M3U8 + YouTube</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
     <style>
         * {
@@ -34,6 +34,292 @@
             margin-bottom: 25px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
+
+        input, button, select {
+            padding: 12px 15px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            margin: 5px;
+        }
+
+        input, select {
+            background-color: #2d2d2d;
+            color: white;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        button {
+            background-color: #00ccff;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background-color: #0099cc;
+        }
+
+        .btn-danger {
+            background-color: #ff4444;
+        }
+
+        .btn-danger:hover {
+            background-color: #cc0000;
+        }
+
+        .form-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .link-item {
+            background-color: #2d2d2d;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .link-url {
+            flex: 1;
+            word-break: break-all;
+            color: #b3e5fc;
+            font-size: 14px;
+        }
+
+        .tipo-tag {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .tipo-m3u8 { background: #00bcd4; color: #000; }
+        .tipo-youtube { background: #ff0000; color: #fff; }
+
+        .player-container {
+            margin-top: 15px;
+            background-color: #000;
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%;
+            height: 0;
+        }
+
+        .player-container video,
+        .player-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status.success {
+            background-color: #004d40;
+            color: #e0f2f1;
+            display: block;
+        }
+
+        .status.error {
+            background-color: #b71c1c;
+            color: #ffebee;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>📺 Gerenciador de Streams – M3U8 + YouTube</h1>
+
+    <div class="section">
+        <h2>Adicionar Novo Link</h2>
+        <div class="form-group">
+            <input type="text" id="linkNome" placeholder="Nome do canal/vídeo">
+            <select id="linkTipo">
+                <option value="m3u8">Stream M3U8</option>
+                <option value="youtube">Vídeo/Transmissão YouTube</option>
+            </select>
+            <input type="url" id="linkUrl" placeholder="URL do link">
+            <button onclick="adicionarLink()">Salvar Link</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Meus Links</h2>
+        <div id="listaLinks"></div>
+    </div>
+
+    <div class="section">
+        <h2>Reprodutor</h2>
+        <div class="player-container" id="playerContainer">
+            <video id="videoPlayer" controls></video>
+        </div>
+        <div id="statusPlayer" class="status"></div>
+    </div>
+
+    <script>
+        let listaLinks = JSON.parse(localStorage.getItem('linksStreams')) || [];
+        const video = document.getElementById('videoPlayer');
+        const playerContainer = document.getElementById('playerContainer');
+        const statusPlayer = document.getElementById('statusPlayer');
+        let hls = null;
+
+        document.addEventListener('DOMContentLoaded', renderizarLista);
+
+        // ✅ FUNÇÃO ATUALIZADA: reconhece /live/, /shorts/, /embed/, watch?v=, youtu.be/ e parâmetros extras
+        function extrairIdYoutube(url) {
+            const regex = /(?:https?:\/\/)?(?:(?:[\w-]+\.)?youtube\.[\w.]+\/(?:watch\?(?:.*?&)?v=|embed\/|live\/|shorts\/)|(?:www\.)?youtu\.be\/)([\w-]{11})(?:[?&/]|$)/;
+            const resultado = url.match(regex);
+            return resultado ? resultado[1] : null;
+        }
+
+        function adicionarLink() {
+            const nome = document.getElementById('linkNome').value.trim();
+            const tipo = document.getElementById('linkTipo').value;
+            const url = document.getElementById('linkUrl').value.trim();
+
+            if (!nome || !url) {
+                mostrarStatus('Preencha todos os campos!', 'error');
+                return;
+            }
+
+            if (tipo === 'm3u8' && !url.includes('.m3u8')) {
+                mostrarStatus('Link M3U8 inválido!', 'error');
+                return;
+            }
+
+            const idYt = extrairIdYoutube(url);
+            if (tipo === 'youtube' && !idYt) {
+                mostrarStatus('Link do YouTube inválido! Verifique se o endereço está correto.', 'error');
+                return;
+            }
+
+            listaLinks.push({ id: Date.now(), nome, tipo, url });
+            salvarLinks();
+            renderizarLista();
+            document.getElementById('linkNome').value = '';
+            document.getElementById('linkUrl').value = '';
+            mostrarStatus('Link adicionado com sucesso!', 'success');
+        }
+
+        function renderizarLista() {
+            const container = document.getElementById('listaLinks');
+            container.innerHTML = '';
+
+            if (listaLinks.length === 0) {
+                container.innerHTML = '<p style="color:#999">Nenhum link salvo ainda.</p>';
+                return;
+            }
+
+            listaLinks.forEach(link => {
+                const item = document.createElement('div');
+                item.className = 'link-item';
+                item.innerHTML = `
+                    <div>
+                        <h4>
+                            <span class="tipo-tag tipo-${link.tipo}">${link.tipo === 'm3u8' ? 'M3U8' : 'YouTube'}</span>
+                            ${link.nome}
+                        </h4>
+                        <div class="link-url">${link.url}</div>
+                    </div>
+                    <div>
+                        <button onclick="reproduzirLink('${link.id}')">▶ Reproduzir</button>
+                        <button class="btn-danger" onclick="excluirLink(${link.id})">🗑 Excluir</button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function reproduzirLink(id) {
+            const link = listaLinks.find(l => l.id == id);
+            if (!link) return;
+
+            statusPlayer.className = 'status';
+            statusPlayer.textContent = '';
+            limparPlayer();
+
+            if (link.tipo === 'youtube') {
+                const idVideo = extrairIdYoutube(link.url);
+                playerContainer.innerHTML = `<iframe src="https://www.youtube.com/embed/${idVideo}?rel=0&autoplay=1" allowfullscreen allow="autoplay; encrypted-media"></iframe>`;
+                mostrarStatus('Carregando...', 'success');
+
+            } else if (link.tipo === 'm3u8') {
+                playerContainer.innerHTML = `<video id="videoPlayer" controls></video>`;
+                const novoVideo = document.getElementById('videoPlayer');
+
+                if (Hls.isSupported()) {
+                    hls = new Hls();
+                    hls.loadSource(link.url);
+                    hls.attachMedia(novoVideo);
+
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        novoVideo.play();
+                        mostrarStatus('Reproduzindo...', 'success');
+                    });
+
+                    hls.on(Hls.Events.ERROR, (_, data) => {
+                        if (data.fatal) {
+                            mostrarStatus('Erro: link indisponível ou bloqueado', 'error');
+                            hls.destroy();
+                        }
+                    });
+
+                } else if (novoVideo.canPlayType('application/vnd.apple.mpegurl')) {
+                    novoVideo.src = link.url;
+                    novoVideo.play();
+                    mostrarStatus('Reproduzindo...', 'success');
+                } else {
+                    mostrarStatus('Navegador não suporta reprodução M3U8', 'error');
+                }
+            }
+        }
+
+        function limparPlayer() {
+            if (hls) { hls.destroy(); hls = null; }
+            playerContainer.innerHTML = `<video id="videoPlayer" controls></video>`;
+        }
+
+        function excluirLink(id) {
+            listaLinks = listaLinks.filter(l => l.id !== id);
+            salvarLinks();
+            renderizarLista();
+            mostrarStatus('Link excluído!', 'success');
+        }
+
+        function salvarLinks() {
+            localStorage.setItem('linksStreams', JSON.stringify(listaLinks));
+        }
+
+        function mostrarStatus(mensagem, tipo) {
+            statusPlayer.textContent = mensagem;
+            statusPlayer.className = `status ${tipo}`;
+            setTimeout(() => { statusPlayer.className = 'status'; }, 5000);
+        }
+    </script>
+</body>
+</html>
 
         input, button {
             padding: 12px 15px;
